@@ -10,12 +10,12 @@ class SensorExchange:
         self._temperature_timestamp = time.time()
         self._temperature_lock = threading.Lock()
 
-    def update_temperature(self, new_temperature, status):
+    def update_temperature(self, new_temperature, status, timestamp):
         with self._temperature_lock:
             self._temperature_value = new_temperature
             self._temperature_status = status
             if status == SensorStatus.WORKING:
-                self._temperature_timestamp = time.time()
+                self._temperature_timestamp = timestamp
 
     def get_temperature(self):
         with self._temperature_lock:

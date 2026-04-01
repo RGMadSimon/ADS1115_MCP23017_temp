@@ -13,43 +13,70 @@ class ADS1115_SMBUS2_conn():
         # Define timeout variable
         self.time_last_config_set = 0
         self.conversion_timeout = 0.5
+        self.i2c_timeout = 0.5
         # Alarms / diagnostic
         self.I2C_alarm = False
+        # Store last conversion
+        self.last_read = 0
+        self.last_read_timestamp = 0
 
     def set_config_register(self, mux_select, prog_gain, data_rate):
         config_register = (0x1 << 15) | (mux_select << 12) | (prog_gain << 9) | (adcSingleShotConversion << 8) | (data_rate << 5) | (adcComparatorOff)
         self.conf = config_register
+    
+    def get_reading(self):
+        return self.last_read, self.I2C_alarm, self.last_read_timestamp
 
     # Write config register
     def write_conf(self):
         f_send = flip_msb_lsb(self.conf)
-        self.bus.write_word_data(self.ads1115_addr, config_register_address, f_send)
-        self.time_last_config_set = time.time()
+        try:
+            self.bus.write_word_data(self.ads1115_addr, config_register_address, f_send)
+            self.time_last_config_set = time.time()
+            self.I2C_alarm = False
+            return True
+        except Exception as e:
+            return self.report_bug_and_close()
 
     def double_check_config(self):
-        data_read = self.bus.read_word_data(self.ads1115_addr, config_register_address)
-        f_read = flip_msb_lsb(data_read) | 0x8000  # force OS bit high (it will be zero because conversion not done)
-        self.I2C_alarm = not (f_read == self.conf)
-        return f_read == self.conf
-    
+        try:
+            data_read = self.bus.read_word_data(self.ads1115_addr, config_register_address)
+            f_read = flip_msb_lsb(data_read) | 0x8000  # force OS bit high (it will be zero because conversion not done)
+            self.I2C_alarm = not (f_read == self.conf)
+            return f_read == self.conf
+        except Exception as e:
+            return self.report_bug_and_close()
+
     def wait_conversion_ready(self):
         while time.time() - self.time_last_config_set < self.conversion_timeout:
-            data_read = self.bus.read_word_data(self.ads1115_addr, config_register_address)
+            try:
+                data_read = self.bus.read_word_data(self.ads1115_addr, config_register_address)
+            except Exception as e:
+                return self.report_bug_and_close()
             f_read = flip_msb_lsb(data_read)
             os_bit = (f_read & 0x8000) >> 15
             if os_bit:
                 self.I2C_alarm = False
                 return True
-        self.I2C_alarm = True
-        return False
+        print(f"I2C - ADS1115 - conversion time out")
+        return self.report_bug_and_close()
 
     def read_conversion_result(self):
-        data_read = self.bus.read_word_data(self.ads1115_addr, conversion_register_address)
-        f_read = flip_msb_lsb(data_read) / 32768
-        analog_input_0 = f_read * 4.096
-        self.I2C_alarm = False
-        return analog_input_0
-    
+        try:
+            data_read = self.bus.read_word_data(self.ads1115_addr, conversion_register_address)
+            f_read = flip_msb_lsb(data_read) / 32768
+            self.last_read = f_read * 4.096
+            self.last_read_timestamp = time.time()
+            self.I2C_alarm = False
+            return self.last_read
+        except Exception as e:
+            return self.report_bug_and_close()
+
+    def report_bug_and_close(self, e):
+        self.I2C_alarm = True
+        print(f"Error: {e}")
+        self.bus.close()
+        return False
 
 def main():
     while(True):

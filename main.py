@@ -10,6 +10,9 @@ from enum import Enum
 
 app = FastAPI()
 sens_exchange = SensorExchange()
+# Create SMBUS bus object
+i2c_bus = SMBus(1)
+conn_to_adc = ADS1115_SMBUS2_conn(i2c_bus)
 
 @app.post("/api/motor/control")
 async def control_motor(motor_data: InverterData):
@@ -22,7 +25,8 @@ async def root():
 
 @app.get("/api/sensors", response_model=SensorData)
 async def get_sensors():
-    temperature, status, timestamp = sens_exchange.get_temperature()
+    temperature, status_flag, timestamp = conn_to_adc.get_reading()
+    status = SensorStatus.FAULTY if status_flag else SensorStatus.WORKING
     #status = SensorStatus.WORKING
     return {"temperature": temperature, "status": status, "timestamp": timestamp}
 
@@ -32,30 +36,24 @@ async def control_relay(state: bool):
     return {"status": f"Relay turned {state}"}
 
 def I2C_thread(exchange):
-    # Create SMBUS bus object
-    i2c_bus = SMBus(1)
-    conn_to_adc = ADS1115_SMBUS2_conn(i2c_bus)
     # Set channel, Voltage input range, samples/second
     conn_to_adc.set_config_register(adcMuxSelectAN0, adcPlusMinus4Volts, adcDataRate16sps)
     #initialize analog read for storing in case of error
     analog_input_0 = 0
     # Sensor polling
     while(True):
-        try:
-            # Write config register
-            conn_to_adc.write_conf()
-            # Make sure ADS1115 received correct config (read it)
-            if not conn_to_adc.double_check_config():
-                continue
-            # wait (polling read cycle) for conversion to be ready
-            conn_to_adc.wait_conversion_ready()
-            # Read a byte from the specified register
-            analog_input_0 = conn_to_adc.read_conversion_result()
-            exchange.update_temperature(analog_input_0, SensorStatus.FAULTY if conn_to_adc.I2C_alarm else SensorStatus.WORKING)
-            #print("   AN0: " + str(exchange.get_temperature()))
-        except Exception as e:
-            exchange.update_temperature(analog_input_0, SensorStatus.FAULTY)
-            print(f"Error: {e}")
+        # Write config register (to start each conversion)
+        if not conn_to_adc.write_conf():
+            continue
+        # Make sure ADS1115 received correct config (read it)
+        if not conn_to_adc.double_check_config():
+            continue
+        # wait (polling read cycle) for conversion to be ready
+        if not conn_to_adc.wait_conversion_ready():
+            continue
+        # Read result
+        if not conn_to_adc.read_conversion_result():
+            continue
 
 def I2C_thread2(exchange):
     # Create SMBUS bus object
@@ -86,7 +84,7 @@ def relay_set_state(cmd):
     #print('relay state: ' + cmd)
 
 def main():
-    i2c_thread = threading.Thread(target=I2C_thread2, kwargs={"exchange": sens_exchange})
+    i2c_thread = threading.Thread(target=I2C_thread, kwargs={"exchange": sens_exchange})
     i2c_thread.start()
 
     config = uvicorn.Config(app, host="0.0.0.0", port=8000)
