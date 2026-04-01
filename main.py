@@ -38,8 +38,6 @@ async def control_relay(state: bool):
 def I2C_thread(exchange):
     # Set channel, Voltage input range, samples/second
     conn_to_adc.set_config_register(adcMuxSelectAN0, adcPlusMinus4Volts, adcDataRate16sps)
-    #initialize analog read for storing in case of error
-    analog_input_0 = 0
     # Sensor polling
     while(True):
         # Write config register (to start each conversion)

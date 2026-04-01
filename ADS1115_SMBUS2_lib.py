@@ -16,6 +16,7 @@ class ADS1115_SMBUS2_conn():
         self.i2c_timeout = 0.5
         # Alarms / diagnostic
         self.I2C_alarm = False
+        self.last_error = None
         # Store last conversion
         self.last_read = 0
         self.last_read_timestamp = 0
@@ -36,7 +37,7 @@ class ADS1115_SMBUS2_conn():
             self.I2C_alarm = False
             return True
         except Exception as e:
-            return self.report_bug_and_close()
+            return self.report_bug_and_close(e)
 
     def double_check_config(self):
         try:
@@ -45,21 +46,23 @@ class ADS1115_SMBUS2_conn():
             self.I2C_alarm = not (f_read == self.conf)
             return f_read == self.conf
         except Exception as e:
-            return self.report_bug_and_close()
+            return self.report_bug_and_close(e)
 
     def wait_conversion_ready(self):
-        while time.time() - self.time_last_config_set < self.conversion_timeout:
-            try:
-                data_read = self.bus.read_word_data(self.ads1115_addr, config_register_address)
-            except Exception as e:
-                return self.report_bug_and_close()
-            f_read = flip_msb_lsb(data_read)
-            os_bit = (f_read & 0x8000) >> 15
-            if os_bit:
-                self.I2C_alarm = False
-                return True
-        print(f"I2C - ADS1115 - conversion time out")
-        return self.report_bug_and_close()
+        try:
+            while time.time() - self.time_last_config_set < self.conversion_timeout:
+                try:
+                    data_read = self.bus.read_word_data(self.ads1115_addr, config_register_address)
+                except Exception as e:
+                    return self.report_bug_and_close(e)
+                f_read = flip_msb_lsb(data_read)
+                os_bit = (f_read & 0x8000) >> 15
+                if os_bit:
+                    self.I2C_alarm = False
+                    return True
+            raise RuntimeError("I2C - ADS1115 - conversion time out")
+        except Exception as e:
+            return self.report_bug_and_close(e)
 
     def read_conversion_result(self):
         try:
@@ -70,12 +73,18 @@ class ADS1115_SMBUS2_conn():
             self.I2C_alarm = False
             return self.last_read
         except Exception as e:
-            return self.report_bug_and_close()
+            return self.report_bug_and_close(e)
 
     def report_bug_and_close(self, e):
+        # Report I2C fault of this sensor
         self.I2C_alarm = True
-        print(f"Error: {e}")
-        self.bus.close()
+        # Print if not repetitive
+        if e.args != self.last_error:
+            print(f"Error: {e}")
+        self.last_error = e.args
+        if self.bus is not None:
+            if hasattr(self.bus, 'fileno'):  # Check if the bus has a fileno() method
+                self.bus.close()
         return False
 
 def main():
