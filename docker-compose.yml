@@ -1,0 +1,9 @@
+services:
+  api:
+    build: .
+    container_name: ads1115_fastapi_v0.1
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    devices:
+      - "/dev/i2c-1:/dev/i2c-1"
