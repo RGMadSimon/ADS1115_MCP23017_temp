@@ -63,21 +63,10 @@ def I2C_thread3(exchange):
     conn_to_adc.set_config_register(adcMuxSelectAN0, adcPlusMinus4Volts, adcDataRate16sps)
     # Sensor polling
     while(True):
-        # ADS1115 
-        # Write config register (to start each conversion)
-        if not conn_to_adc.write_conf():
-            pass
-        # Make sure ADS1115 received correct config (read it)
-        elif not conn_to_adc.double_check_config():
-            pass
-        # wait (polling read cycle) for conversion to be ready
-        elif not conn_to_adc.wait_conversion_ready():
-            pass
-        # Read result
-        elif not conn_to_adc.read_conversion_result():
-            pass
-        
         # GPIO I2C (MCP23017) WRITE
+        if i2c_gpio.bus is None or conn_to_adc.bus is None:
+            i2c_bus = SMBus(1)
+            i2c_gpio.bus = i2c_bus
         # connect to mcp23017 if not done already (or if conn was lost)
         if not mcp23017_conn_ok:
             # Write config register (IOCON)
@@ -92,6 +81,24 @@ def I2C_thread3(exchange):
         if mcp23017_conn_ok:
             if not i2c_gpio.write_gpio(out_gpio_temp):
                 mcp23017_conn_ok = False
+        
+        # ADS1115 
+        if i2c_gpio.bus is None or conn_to_adc.bus is None:
+            i2c_bus = SMBus(1)
+            conn_to_adc.bus = i2c_bus
+        # Write config register (to start each conversion)
+        if not conn_to_adc.write_conf():
+            pass
+        # Make sure ADS1115 received correct config (read it)
+        elif not conn_to_adc.double_check_config():
+            pass
+        # wait (polling read cycle) for conversion to be ready
+        elif not conn_to_adc.wait_conversion_ready():
+            pass
+        # Read result
+        elif not conn_to_adc.read_conversion_result():
+            pass
+        
 
 
 def I2C_thread2(exchange):

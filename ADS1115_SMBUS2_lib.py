@@ -30,6 +30,8 @@ class ADS1115_SMBUS2_conn():
 
     # Write config register
     def write_conf(self):
+        if self.bus is None:
+            return False
         f_send = flip_msb_lsb(self.conf)
         try:
             self.bus.write_word_data(self.ads1115_addr, config_register_address, f_send)
@@ -40,6 +42,8 @@ class ADS1115_SMBUS2_conn():
             return self.report_bug_and_close(e)
 
     def double_check_config(self):
+        if self.bus is None:
+            return False
         try:
             data_read = self.bus.read_word_data(self.ads1115_addr, config_register_address)
             f_read = flip_msb_lsb(data_read) | 0x8000  # force OS bit high (it will be zero because conversion not done)
@@ -49,6 +53,8 @@ class ADS1115_SMBUS2_conn():
             return self.report_bug_and_close(e)
 
     def wait_conversion_ready(self):
+        if self.bus is None:
+            return False
         try:
             while time.time() - self.time_last_config_set < self.conversion_timeout:
                 try:
@@ -65,6 +71,8 @@ class ADS1115_SMBUS2_conn():
             return self.report_bug_and_close(e)
 
     def read_conversion_result(self):
+        if self.bus is None:
+            return False
         try:
             data_read = self.bus.read_word_data(self.ads1115_addr, conversion_register_address)
             f_read = flip_msb_lsb(data_read) / 32768
@@ -85,6 +93,7 @@ class ADS1115_SMBUS2_conn():
         if self.bus is not None:
             if hasattr(self.bus, 'fileno'):  # Check if the bus has a fileno() method
                 self.bus.close()
+                self.bus = None
         return False
 
 def main():

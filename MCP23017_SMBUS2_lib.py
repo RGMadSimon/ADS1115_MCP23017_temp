@@ -16,6 +16,7 @@ class MCP23017_SMBUS2_conn():
         self.timeout = 0.2
         # Alarms / diagnostic
         self.I2C_alarm = False
+        self.last_error = None
 
     # Write IOCON (config) register
     def write_conf(self):
@@ -41,18 +42,22 @@ class MCP23017_SMBUS2_conn():
     # general "write-and-check register" function
     def write_and_check(self, reg_address, to_write):
         time_started = time.time()
-        while time.time() - time_started < self.timeout:
-            try:
-                self.bus.write_byte_data(self.mcp23017_device_addr, reg_address, to_write)
-                to_check = self.bus.read_byte_data(self.mcp23017_device_addr, reg_address)
-            except Exception as e:
-                continue
-            if to_check == to_write:
-                self.I2C_alarm = False
-                return True
-        print('I2C timeout')
-        self.I2C_alarm = True
-        return False
+        try:
+            while time.time() - time_started < self.timeout:
+                try:
+                    self.bus.write_byte_data(self.mcp23017_device_addr, reg_address, to_write)
+                    to_check = self.bus.read_byte_data(self.mcp23017_device_addr, reg_address)
+                except Exception as e:
+                    continue
+                if to_check == to_write:
+                    self.I2C_alarm = False
+                    return True
+            raise RuntimeError("I2C - MCP23017 - register write failed")
+        except Exception as e:
+            return self.report_bug_and_close(e)
+        #print('I2C timeout')
+        #self.I2C_alarm = True
+        #return False
     
     # general "read and check for timeouts" function
     def read_and_check(self, reg_address):
@@ -72,3 +77,15 @@ class MCP23017_SMBUS2_conn():
     def compose_iocon_register(bank = 0, sequential_op = 1):
         return (bank << 7) | (sequential_op << 5)
 
+    def report_bug_and_close(self, e):
+            # Report I2C fault of this sensor
+            self.I2C_alarm = True
+            # Print if not repetitive
+            if e.args != self.last_error:
+                print(f"Error: {e}")
+            self.last_error = e.args
+            if self.bus is not None:
+                if hasattr(self.bus, 'fileno'):  # Check if the bus has a fileno() method
+                    self.bus.close()
+                    self.bus = None
+            return False
